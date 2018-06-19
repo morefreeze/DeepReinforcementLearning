@@ -191,6 +191,7 @@ class GameState():
 	def _getValue(self):
 		# This is the value of the state for the current player
 		# i.e. if the previous player played a winning move, you lose
+                # return (?, value, done)
 		for x,y,z,a in self.winners:
 			if (self.board[x] + self.board[y] + self.board[z] + self.board[a] == 4 * -self.playerTurn):
 				return (-1, -1, 1)
