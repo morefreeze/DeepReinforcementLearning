@@ -273,6 +273,9 @@ class PickStonesExceedError(Exception):
 
 class PickStones(Action):
 
+    def __init__(self, current_player, stone):
+        super().__init__(current_player, ActionType.PICK_STONES, stone)
+
     def is_playable(self, board):
         stones = self.card_or_stone
         if stones[Color.GOLD] > 0:
@@ -301,6 +304,9 @@ class NotFullfillError(Exception):
 
 class PickCard(Action):
 
+    def __init__(self, current_player, card):
+        super().__init__(current_player, ActionType.PICK_CARD, card)
+
     def is_playable(self, board):
         card = self.card_or_stone
         in_line = any([card in board[deck] for deck in [Position.LINE1, Position.LINE2, Position.LINE3]])
@@ -323,6 +329,9 @@ class PickCard(Action):
 
 class PickNoble(Action):
 
+    def __init__(self, current_player, noble):
+        super().__init__(current_player, ActionType.PICK_NOBLE, noble)
+
     def is_playable(self, board):
         player = board[Position.PLAYER_POS][self.current_player]
         noble = self.card_or_stone
@@ -336,6 +345,9 @@ class PickNoble(Action):
             player[GameElement.NOBLE].append(noble)
 
 class FoldCard(Action):
+
+    def __init__(self, current_player, card):
+        super().__init__(current_player, ActionType.FOLD_CARD, card)
 
     def is_playable(self, board):
         # todo: Now only fold card which is present, however cards in deck is able to fold
