@@ -1,6 +1,9 @@
 # coding: utf-8
 import random
+import itertools
 from enum import Enum, auto
+
+MAX_STONES = 10
 
 class Color(Enum):
     UNKNOWN = -1
@@ -99,8 +102,8 @@ class Card(Stone):
 
     def fulfill(self, stones, cards) -> (bool, dict):
         '''return (is_fulfill, removed_stones)
-        return True if card can be fulfill and give what should be remove
-        remove must be cards, stones, golds
+        return True if card can be fulfill and give what should be paid
+        paid order must be cards, stones, golds
         '''
         has_stones = Stones()
         removed_stones = Stones()
@@ -158,8 +161,8 @@ class Cards(dict):
                 for i in range(5):
                     self[deck].append(
                         Card(Color(Color.ALL.value[i]),
-                             dict(zip(map(Color, (Color.ALL.value*2)[i:i+5]), pat))
-                            )
+                             dict(zip(map(Color, (Color.ALL.value*2)[i:i+5]), pat)),
+                            score)
                     )
 
 class CardStone(Stone):
@@ -204,6 +207,16 @@ class Player(dict):
         self[GameElement.CARD] = []
         self[GameElement.NOBLE] = []
         self[GameElement.FOLD] = []
+
+    def win(self):
+        return self.score >= 15
+
+    @property
+    def score(self):
+        score = 0
+        for ele in (GameElement.CARD, GameElement.NOBLE):
+            score += sum([c.score for c in self[ele]])
+        return score
 
 class Board(dict):
 
@@ -299,7 +312,7 @@ class PickStones(Action):
             board[Position.STONE][c] -= num
             player[GameElement.STONE][c] += num
 
-class NotFullfillError(Exception):
+class NotFulfillError(Exception):
     pass
 
 class PickCard(Action):
@@ -308,8 +321,9 @@ class PickCard(Action):
         super().__init__(current_player, ActionType.PICK_CARD, card)
 
     def is_playable(self, board):
+        player = board[Position.PLAYER_POS][self.current_player]
         card = self.card_or_stone
-        in_line = any([card in board[deck] for deck in [Position.LINE1, Position.LINE2, Position.LINE3]])
+        in_line = any([card in board[line] for line in [Position.LINE1, Position.LINE2, Position.LINE3]])
         return in_line and card.fulfill(player[GameElement.STONE], player[GameElement.CARD])[0]
 
     def apply(self, board):
@@ -317,7 +331,7 @@ class PickCard(Action):
         card = self.card_or_stone
         is_fulfill, removed_stones = card.fulfill(player[GameElement.STONE], player[GameElement.CARD])
         if not is_fulfill:
-            raise NotFullfillError
+            raise NotFulfillError
         player[GameElement.STONE] -= removed_stones
         player[GameElement.CARD].append(card)
         board.draw(card)
@@ -350,15 +364,15 @@ class FoldCard(Action):
         super().__init__(current_player, ActionType.FOLD_CARD, card)
 
     def is_playable(self, board):
-        # todo: Now only fold card which is present, however cards in deck is able to fold
-        card = self.card_or_stone
-        in_line = any([card in board[deck] for deck in [Position.LINE1, Position.LINE2, Position.LINE3]])
+        # todo: Now only fold card which is present, however first card from deck is able to fold
         player = board[Position.PLAYER_POS][self.current_player]
+        card = self.card_or_stone
+        in_line = any([card in board[line] for line in [Position.LINE1, Position.LINE2, Position.LINE3]])
         return in_line and len(player[GameElement.FOLD]) < 3
 
     def apply(self, board):
         if not self.is_playable(board):
-            raise NotFullfillError
+            raise NotFulfillError
         player = board[Position.PLAYER_POS][self.current_player]
         card = self.card_or_stone
         player[GameElement.FOLD].append(card)
@@ -385,7 +399,14 @@ class Game(object):
 
     def step(self, action):
         new_state, value, done = self.state.takeAction(action)
-        return ((next_state, value, done, info))
+        self.state = new_state
+        self.current_player = new_state.current_player
+        info = None
+        return ((new_state, value, done, info))
+
+    @property
+    def player(self):
+        return self.board[Position.PLAYER_POS][self.current_player]
 
 class GameState(object):
 
@@ -396,6 +417,7 @@ class GameState(object):
         self.binary = self._binary()
         self.id = self._convertStateToId()
         self.allowedActions = self._allowedActions()
+        self.fairTurn = False
         self.isEndGame = self._checkForEndGame()
         self.value = self._getValue()
         self.score = self._getScore()
@@ -407,12 +429,37 @@ class GameState(object):
         return '|'.join(self.binary)
 
     def _allowedActions(self):
-        # todo
-        return []
+        allowed_actions = []
+        # PickStones
+        # Pick 1 stone from each color
+        for num in range(3, 0, -1):
+            for colors in itertools.combinations(Color.ALL.value, num):
+                ps = PickStones(self.current_player, Stones({Color(c): 1 for c in colors}))
+                if ps.is_playable(self.board):
+                    allowed_actions.append(ps)
+        # Pick 2 stones from one color
+        for c in Color.ALL.value:
+            ps = PickStones(self.current_player, Stones({Color(c): 2}))
+            if ps.is_playable(self.board):
+                allowed_actions.append(ps)
+        # PickCard & FoldCard
+        for line in (Position.LINE1, Position.LINE2, Position.LINE3):
+            for card in self.board[line]:
+                pc = PickCard(self.current_player, card)
+                if pc.is_playable(self.board):
+                    allowed_actions.append(pc)
+                pf = FoldCard(self.current_player, card)
+                if pf.is_playable(self.board):
+                    allowed_actions.append(pf)
+        return allowed_actions
 
     def _checkForEndGame(self):
-        # todo
-        return False
+        for p in self.board[Position.PLAYER_POS]:
+            if p.win():
+                self.fairTurn = True
+        if self.fairTurn and self.current_player == len(self.board[Position.PLAYER_POS]) - 1:
+            return 1
+        return 0
 
     def _getValue(self):
         # todo: sum all player score, if someone wins, return (-1, -1, 1) else (0, 0, 0)
@@ -424,6 +471,21 @@ class GameState(object):
         return (tmp[1], tmp[2])
 
     def takeAction(self, action):
-        new_board = self.board.apply(action)
+        action.apply(self.board)
         self.current_player = (self.current_player + 1) % len(self.players)
-        value, done = new_state.value[0], 1 if new_state.isEndGame else 0, 0
+        new_state = GameState(self.board, self.players, self.current_player)
+        value, done = (new_state.value[0], 1) if new_state.isEndGame else (0, 0)
+        return new_state, value, done
+
+if __name__ == '__main__':
+    g = Game(player_num=4, seed=0)
+    b = g.board
+    gs = g.state
+    g.step(gs.allowedActions[-1])
+
+    p = g.player
+    for _ in range(5):
+        c = b[Position.LINE3][0]
+        p[GameElement.CARD].append(c)
+        b.draw(c)
+    print(p.score)
