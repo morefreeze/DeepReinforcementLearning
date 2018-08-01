@@ -264,13 +264,13 @@ class Board(dict):
 
 class Action(object):
 
-    def __init__(self, current_player, typ, card_or_stone):
-        self.current_player = current_player
+    def __init__(self, playerTurn, typ, card_or_stone):
+        self.playerTurn = playerTurn
         self.typ = typ
         self.card_or_stone = card_or_stone
 
     def __str__(self):
-        return 'Player %s do %s with %s' % (self.current_player, self.typ, self.card_or_stone)
+        return 'Player %s do %s with %s' % (self.playerTurn, self.typ, self.card_or_stone)
 
     def __repr__(self):
         return '%s(%s)' % (self.__class__.__name__, self)
@@ -286,8 +286,8 @@ class PickStonesExceedError(Exception):
 
 class PickStones(Action):
 
-    def __init__(self, current_player, stone):
-        super().__init__(current_player, ActionType.PICK_STONES, stone)
+    def __init__(self, playerTurn, stone):
+        super().__init__(playerTurn, ActionType.PICK_STONES, stone)
 
     def is_playable(self, board):
         stones = self.card_or_stone
@@ -306,7 +306,7 @@ class PickStones(Action):
     def apply(self, board):
         if not self.is_playable(board):
             raise PickStonesExceedError
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         stones = self.card_or_stone
         for c, num in stones.items():
             board[Position.STONE][c] -= num
@@ -317,17 +317,17 @@ class NotFulfillError(Exception):
 
 class PickCard(Action):
 
-    def __init__(self, current_player, card):
-        super().__init__(current_player, ActionType.PICK_CARD, card)
+    def __init__(self, playerTurn, card):
+        super().__init__(playerTurn, ActionType.PICK_CARD, card)
 
     def is_playable(self, board):
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         card = self.card_or_stone
         in_line = any([card in board[line] for line in [Position.LINE1, Position.LINE2, Position.LINE3]])
         return in_line and card.fulfill(player[GameElement.STONE], player[GameElement.CARD])[0]
 
     def apply(self, board):
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         card = self.card_or_stone
         is_fulfill, removed_stones = card.fulfill(player[GameElement.STONE], player[GameElement.CARD])
         if not is_fulfill:
@@ -338,34 +338,34 @@ class PickCard(Action):
         # If fulfill noble then acquire automatically
         for noble in board[Position.HALL]:
             if noble.fulfill(player[GameElement.CARD]):
-                pn = PickNoble(self.current_player, ActionType.PICK_NOBLE, noble)
+                pn = PickNoble(self.playerTurn, ActionType.PICK_NOBLE, noble)
                 pn.apply(b)
 
 class PickNoble(Action):
 
-    def __init__(self, current_player, noble):
-        super().__init__(current_player, ActionType.PICK_NOBLE, noble)
+    def __init__(self, playerTurn, noble):
+        super().__init__(playerTurn, ActionType.PICK_NOBLE, noble)
 
     def is_playable(self, board):
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         noble = self.card_or_stone
         return noble in board[Positio.HALL] and noble.fulfill(player[GameElement.CARD])
 
     def apply(self, board):
         if self.is_playable(board):
-            player = board[Position.PLAYER_POS][self.current_player]
+            player = board[Position.PLAYER_POS][self.playerTurn]
             noble = self.card_or_stone
             board[Position.HALL].remove(noble)
             player[GameElement.NOBLE].append(noble)
 
 class FoldCard(Action):
 
-    def __init__(self, current_player, card):
-        super().__init__(current_player, ActionType.FOLD_CARD, card)
+    def __init__(self, playerTurn, card):
+        super().__init__(playerTurn, ActionType.FOLD_CARD, card)
 
     def is_playable(self, board):
         # todo: Now only fold card which is present, however first card from deck is able to fold
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         card = self.card_or_stone
         in_line = any([card in board[line] for line in [Position.LINE1, Position.LINE2, Position.LINE3]])
         return in_line and len(player[GameElement.FOLD]) < 3
@@ -373,7 +373,7 @@ class FoldCard(Action):
     def apply(self, board):
         if not self.is_playable(board):
             raise NotFulfillError
-        player = board[Position.PLAYER_POS][self.current_player]
+        player = board[Position.PLAYER_POS][self.playerTurn]
         card = self.card_or_stone
         player[GameElement.FOLD].append(card)
         if board[Position.STONE][Color.GOLD] > 0:
@@ -384,36 +384,42 @@ class FoldCard(Action):
 class Game(object):
 
     def __init__(self, player_num=4, seed=None):
-        self.current_player = 0
-        self.player_num = player_num
         self.name = 'splendor'
+        self.player_num = player_num
         self.seed = seed
-
         self.reset()
+        self.pieces = {'0': 'Alice', '1': 'Bob', '2': 'Claire', '3': 'Doggy'}
+        self.grid_shape = (1, 100)
+        self.input_shape = (player_num, 1, len(self.gameState.allowedActions))
+        self.state_size = len(self.gameState.binary)
+        self.action_size = 60
+
 
     def reset(self):
+        self.playerTurn = 0
         random.seed(self.seed)
         self.board = Board(self.player_num)
         self.players = self.board[Position.PLAYER_POS]
-        self.state = GameState(self.board, self.players, self.current_player)
+        self.gameState = GameState(self.board, self.playerTurn)
+        return self.gameState
 
     def step(self, action):
-        new_state, value, done = self.state.takeAction(action)
-        self.state = new_state
-        self.current_player = new_state.current_player
+        new_state, value, done = self.gameState.takeAction(action)
+        self.gameState = new_state
+        self.playerTurn = new_state.playerTurn
         info = None
         return ((new_state, value, done, info))
 
     @property
     def player(self):
-        return self.board[Position.PLAYER_POS][self.current_player]
+        return self.board[Position.PLAYER_POS][self.playerTurn]
 
 class GameState(object):
 
-    def __init__(self, board, players, current_player):
+    def __init__(self, board, playerTurn):
         self.board = board
-        self.players = players
-        self.current_player = current_player
+        self.players = board[Position.PLAYER_POS]
+        self.playerTurn = playerTurn
         self.binary = self._binary()
         self.id = self._convertStateToId()
         self.allowedActions = self._allowedActions()
@@ -423,7 +429,7 @@ class GameState(object):
         self.score = self._getScore()
 
     def _binary(self):
-        return tuple(map(str, [self.board, self.players, self.current_player]))
+        return tuple(map(str, [self.board, self.players, self.playerTurn]))
 
     def _convertStateToId(self):
         return '|'.join(self.binary)
@@ -434,21 +440,21 @@ class GameState(object):
         # Pick 1 stone from each color
         for num in range(3, 0, -1):
             for colors in itertools.combinations(Color.ALL.value, num):
-                ps = PickStones(self.current_player, Stones({Color(c): 1 for c in colors}))
+                ps = PickStones(self.playerTurn, Stones({Color(c): 1 for c in colors}))
                 if ps.is_playable(self.board):
                     allowed_actions.append(ps)
         # Pick 2 stones from one color
         for c in Color.ALL.value:
-            ps = PickStones(self.current_player, Stones({Color(c): 2}))
+            ps = PickStones(self.playerTurn, Stones({Color(c): 2}))
             if ps.is_playable(self.board):
                 allowed_actions.append(ps)
         # PickCard & FoldCard
         for line in (Position.LINE1, Position.LINE2, Position.LINE3):
             for card in self.board[line]:
-                pc = PickCard(self.current_player, card)
+                pc = PickCard(self.playerTurn, card)
                 if pc.is_playable(self.board):
                     allowed_actions.append(pc)
-                pf = FoldCard(self.current_player, card)
+                pf = FoldCard(self.playerTurn, card)
                 if pf.is_playable(self.board):
                     allowed_actions.append(pf)
         return allowed_actions
@@ -457,7 +463,7 @@ class GameState(object):
         for p in self.board[Position.PLAYER_POS]:
             if p.win():
                 self.fairTurn = True
-        if self.fairTurn and self.current_player == len(self.board[Position.PLAYER_POS]) - 1:
+        if self.fairTurn and self.playerTurn == len(self.board[Position.PLAYER_POS]) - 1:
             return 1
         return 0
 
@@ -472,15 +478,18 @@ class GameState(object):
 
     def takeAction(self, action):
         action.apply(self.board)
-        self.current_player = (self.current_player + 1) % len(self.players)
-        new_state = GameState(self.board, self.players, self.current_player)
+        self.playerTurn = (self.playerTurn + 1) % len(self.players)
+        new_state = GameState(self.board, self.playerTurn)
         value, done = (new_state.value[0], 1) if new_state.isEndGame else (0, 0)
         return new_state, value, done
+
+    def render(self, logger):
+        logger.info('-'*20)
 
 if __name__ == '__main__':
     g = Game(player_num=4, seed=0)
     b = g.board
-    gs = g.state
+    gs = g.gameState
     g.step(gs.allowedActions[-1])
 
     p = g.player
