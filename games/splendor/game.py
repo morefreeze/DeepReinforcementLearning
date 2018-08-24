@@ -1,6 +1,7 @@
 # coding: utf-8
 import random
 import itertools
+import copy
 from enum import Enum, auto
 import numpy as np
 
@@ -428,7 +429,7 @@ class Game(object):
         self.seed = seed
         self.reset()
         self.pieces = {'0': 'Alice', '1': 'Bob', '2': 'Claire', '3': 'Doggy'}
-        self.action_size = len(self.gameState.allowedActions)
+        self.action_size = len(self.gameState.allActions)
         self.state_size = len(self.gameState.binary)
         self.input_shape = (player_num, 1, self.state_size // player_num)
         # self.grid_shape = (1, self.state_size // player_num)
@@ -485,27 +486,9 @@ class GameState(object):
 
     def _allowedActions(self):
         allowed_actions = []
-        # PickStones
-        # Pick 1 stone from each color
-        for num in range(3, 0, -1):
-            for colors in itertools.combinations(Color.ALL.value, num):
-                ps = PickStones(self.playerTurn, Stones({Color(c): 1 for c in colors}))
-                if ps.is_playable(self.board):
-                    allowed_actions.append(ps)
-        # Pick 2 stones from one color
-        for c in Color.ALL.value:
-            ps = PickStones(self.playerTurn, Stones({Color(c): 2}))
-            if ps.is_playable(self.board):
-                allowed_actions.append(ps)
-        # PickCard & FoldCard
-        for line in (Position.LINE1, Position.LINE2, Position.LINE3):
-            for card in self.board[line]:
-                pc = PickCard(self.playerTurn, card)
-                if pc.is_playable(self.board):
-                    allowed_actions.append(pc)
-                pf = FoldCard(self.playerTurn, card)
-                if pf.is_playable(self.board):
-                    allowed_actions.append(pf)
+        for idx, act in enumerate(self.allActions):
+            if act.is_playable(self.board):
+                allowed_actions.append(idx)
         return allowed_actions
 
     def _checkForEndGame(self):
@@ -526,13 +509,35 @@ class GameState(object):
         # sum all player's score
         return tuple(p.score for p in self.board[Position.PLAYER_POS])
 
+    @property
+    def allActions(self):
+        if hasattr(self, '_all_actions'):
+            return self._all_actions
+        all_actions = []
+        # PickStones
+        # Pick 1 stone from each color
+        for num in range(3, 0, -1):
+            for colors in itertools.combinations(Color.ALL.value, num):
+                all_actions.append(PickStones(self.playerTurn, Stones({Color(c): 1 for c in colors})))
+        # Pick 2 stones from one color
+        for c in Color.ALL.value:
+            all_actions.append(PickStones(self.playerTurn, Stones({Color(c): 2})))
+        # PickCard & FoldCard
+        for line in (Position.LINE1, Position.LINE2, Position.LINE3):
+            for card in self.board[line]:
+                all_actions.append(PickCard(self.playerTurn, card))
+                all_actions.append(FoldCard(self.playerTurn, card))
+        self._all_actions = all_actions
+        return all_actions
+
     def takeAction(self, action):
         '''new_state, value, done
         winner: 0-4 player id
         done: 1 for ending game 0 for otherwise'''
-        action.apply(self.board)
+        new_board = copy.deepcopy(self.board)
+        self.allActions[action].apply(new_board)
         self.playerTurn = (self.playerTurn + 1) % len(self.players)
-        new_state = GameState(self.board, self.playerTurn)
+        new_state = GameState(new_board, self.playerTurn)
         winner, done = (new_state.winner, 1) if new_state.isEndGame else (0, 0)
         return new_state, winner, done
 
