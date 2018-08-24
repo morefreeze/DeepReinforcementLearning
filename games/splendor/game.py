@@ -243,8 +243,16 @@ class Player(dict):
         nobles_position = np.zeros(len(b[Position.NOBLES]), dtype=np.int)
         for n in self[PlayerElement.NOBLE]:
             nobles_position[n.id] = 1
-        stones_position = np.array([x[1] for x in sorted(self[PlayerElement.STONE].items(), key=lambda x:x[0].value)]
-                                   , dtype=np.int)
+        '''stones_position:
+         0 1 2 3 4 5 ... 10   # number
+        [0 0 0 0 1 ...   0 ], # GOLD
+        ...
+        '''
+        stones_position = np.array([], dtype=np.int)
+        for x in sorted(self[PlayerElement.STONE].items(), key=lambda x:x[0].value):
+            t = np.zeros(MAX_STONES)
+            t[x[1]] = 1
+            stones_position = np.append(stones_position, t)
         return np.concatenate((cards_position, nobles_position, stones_position))
 
 class Board(dict):
@@ -414,16 +422,16 @@ class FoldCard(Action):
 
 class Game(object):
 
-    def __init__(self, player_num=4, seed=None):
+    def __init__(self, player_num=2, seed=None):
         self.name = 'splendor'
         self.player_num = player_num
         self.seed = seed
         self.reset()
         self.pieces = {'0': 'Alice', '1': 'Bob', '2': 'Claire', '3': 'Doggy'}
-        self.grid_shape = (1, 100)
-        self.input_shape = (player_num, 1, len(self.gameState.allowedActions))
+        self.action_size = len(self.gameState.allowedActions)
         self.state_size = len(self.gameState.binary)
-        self.action_size = 60
+        self.input_shape = (player_num, 1, self.state_size // player_num)
+        # self.grid_shape = (1, self.state_size // player_num)
 
 
     def reset(self):
@@ -532,11 +540,11 @@ class GameState(object):
         logger.info('-'*20)
 
 if __name__ == '__main__':
-    g = Game(player_num=4, seed=0)
+    g = Game(player_num=2, seed=0)
     b = g.board
     gs = g.gameState
     new_gs, value, done, info = g.step(gs.allowedActions[-1])
-    print(new_gs.binary)
+    print(len(new_gs.binary))
     print(new_gs.id)
 
     p = g.player
