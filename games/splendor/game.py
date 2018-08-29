@@ -4,9 +4,10 @@ import itertools
 import copy
 import sys
 from enum import Enum, auto
+from collections import Counter
 import numpy as np
 
-MAX_STONES = 10
+MAX_STONES_LIMIT = 10
 MAX_PLAYERS = 4
 
 class Color(Enum):
@@ -38,12 +39,15 @@ class Position(Enum):
     STONE = 9  # Stones stay here if they are present
     CARDS = 10
     NOBLES = 11
+    # If all players only do nothing, then game over
+    DO_NOTHING = 12
 
 class ActionType(Enum):
     PICK_STONES = auto()
     PICK_CARD = auto()
     PICK_NOBLE = auto()
     FOLD_CARD = auto()
+    DO_NOTHING = auto()
 
 class Stones(dict):
 
@@ -70,16 +74,10 @@ class Stones(dict):
 
     def __sub__(self, rhs):
         assert(rhs <= self)
-        for k in self:
-            self[k] -= rhs[k]
-        return self
+        return Stones(Counter(self) - Counter(rhs))
 
     def __add__(self, rhs):
-        for k in rhs:
-            if k not in self:
-                self[k] = 0
-            self[k] += rhs[k]
-        return self
+        return Stones(Counter(self) + Counter(rhs))
 
 class Stone(object):
     color = Color.UNKNOWN
@@ -233,7 +231,6 @@ class Player(dict):
         self[PlayerElement.CARD] = []
         self[PlayerElement.NOBLE] = []
         self[PlayerElement.FOLD] = []
-        self._score = None
 
     def win(self):
         return self.score >= 15
@@ -261,7 +258,7 @@ class Player(dict):
         '''
         stones_position = np.array([], dtype=np.int)
         for x in sorted(self[PlayerElement.STONE].items(), key=lambda x:x[0].value):
-            t = np.zeros(MAX_STONES)
+            t = np.zeros(MAX_STONES_LIMIT)
             t[x[1]] = 1
             stones_position = np.append(stones_position, t)
         return np.concatenate((cards_position, nobles_position, stones_position))
@@ -350,11 +347,12 @@ class PickStones(Action):
             if stones[c] > board[Position.STONE][c]:
                 return False
         if len(colors) == 1:
-            return stones[colors[0]] < 2 or board[Position.STONE][colors[0]] >= 4
-        elif len(colors) <= 3:
-            return True
-        else:
+            if stones[colors[0]] >= 2 and board[Position.STONE][colors[0]] < 4:
+                return False
+        elif len(colors) > 3:
             return False
+        tmp_stones = board[Position.PLAYER_POS][self.playerTurn][PlayerElement.STONE] + stones
+        return sum(tmp_stones.values()) <= MAX_STONES_LIMIT
 
     def apply(self, board):
         if not self.is_playable(board):
@@ -366,6 +364,9 @@ class PickStones(Action):
             player[PlayerElement.STONE][c] += num
 
 class NotFulfillError(Exception):
+    pass
+
+class DeadlockGameError(Exception):
     pass
 
 class PickCard(Action):
@@ -436,6 +437,17 @@ class FoldCard(Action):
             player[PlayerElement.STONE][Color.GOLD] += 1
         board.draw(card)
 
+class DoNothing(Action):
+    def __init__(self, playerTurn):
+        super().__init__(playerTurn, ActionType.DO_NOTHING, None)
+
+    def is_playable(self, board):
+        return True
+
+    def apply(self, board):
+        if not self.is_playable(board):
+            raise NotFulfillError  # Never!
+
 class Game(object):
 
     def __init__(self, player_num=2, seed=0):
@@ -483,6 +495,7 @@ class GameState(object):
         self.id = self._convertStateToId()
         self.allowedActions = self._allowedActions()
         self.fairTurn = False
+        self.deadlock = False
         self.winner, self.isEndGame = self._checkForEndGame()
         # self.value = self._getValue()
         self.score = self._getScore()
@@ -505,12 +518,26 @@ class GameState(object):
 
     def _allowedActions(self):
         allowed_actions = []
+        do_nothing_id = None
         for idx, act in enumerate(self.allActions):
-            if self.playerTurn == act.playerTurn and act.is_playable(self.board):
-                allowed_actions.append(idx)
+            if self.playerTurn == act.playerTurn:
+                if act.typ == ActionType.DO_NOTHING:
+                    do_nothing_id = idx
+                    continue
+                if act.is_playable(self.board):
+                    allowed_actions.append(idx)
+        if len(allowed_actions) == 0:
+            self.board[Position.DO_NOTHING] += 1
+            allowed_actions.append(do_nothing_id)
+            if self.board[Position.DO_NOTHING] == len(self.players):
+                self.deadlock = True
+        else:
+            self.board[Position.DO_NOTHING] = 0
         return allowed_actions
 
     def _checkForEndGame(self):
+        if self.deadlock:
+            raise DeadlockGameError
         players = self.board[Position.PLAYER_POS]
         for p in players:
             if p.win():
@@ -534,6 +561,7 @@ class GameState(object):
         cards = Cards()
         cards = sum(map(list, cards.values()), [])
         for playerTurn in range(MAX_PLAYERS):
+            all_actions.append(DoNothing(playerTurn))
             # PickStones
             # Pick 1 stone from each color
             for num in range(3, 0, -1):
@@ -567,7 +595,6 @@ GameState.allActions = GameState.build_all_actions()
 
 if __name__ == '__main__':
     seed = random.randrange(sys.maxsize)
-    seed = 1041244683086710520
     g = Game(player_num=2, seed=seed)
     print("Seed {0}".format(seed))
     gs = g.gameState

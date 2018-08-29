@@ -103,6 +103,15 @@ class TestAction(unittest.TestCase):
         self.assertTrue(pc.is_playable(b))
         pc.apply(b)
 
+    def test_do_nothing(self):
+        g, b, c = self.g, self.b, self.c
+        b[Position.STONE] = Stones()
+        b[Position.LINE1] = []
+        b[Position.LINE2] = []
+        b[Position.LINE3] = []
+        gs = GameState(b, 0)
+        self.assertEqual(gs.allActions[gs.allowedActions[0]].typ, ActionType.DO_NOTHING)
+
 class TestGameState(unittest.TestCase):
     def setUp(self):
         self.g = Game(player_num=4, seed=0)
@@ -111,7 +120,7 @@ class TestGameState(unittest.TestCase):
     def test_all_actions(self):
         gs = self.gs
         ac = gs.allActions
-        self.assertEqual(len(ac), 2280)
+        self.assertEqual(len(ac), 2284)
 
     def test_end_game(self):
         b = self.g.board
