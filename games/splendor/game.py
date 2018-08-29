@@ -469,7 +469,7 @@ class Game(object):
         return identities
 
     @property
-    def player(self):
+    def current_player(self):
         return self.board[Position.PLAYER_POS][self.playerTurn]
 
 class GameState(object):
@@ -567,6 +567,7 @@ GameState.allActions = GameState.build_all_actions()
 
 if __name__ == '__main__':
     seed = random.randrange(sys.maxsize)
+    seed = 1041244683086710520
     g = Game(player_num=2, seed=seed)
     print("Seed {0}".format(seed))
     gs = g.gameState

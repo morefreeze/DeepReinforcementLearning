@@ -31,48 +31,102 @@ class TestAction(unittest.TestCase):
         g, b, c = self.g, self.b, self.c
         for cv in Color.ALL.value:
             color = Color(cv)
-            ps = PickStones(g.current_player, Stones({color: 2}))
+            ps = PickStones(g.playerTurn, Stones({color: 2}))
             ps.apply(b)
         ss = b[Position.STONE]
-        assert all([ss[Color(c)] == 5 for c in Color.ALL.value])
+        self.assertTrue(all([ss[Color(c)] == 5 for c in Color.ALL.value]))
+
+    def test_pick_stones2(self):
+        g, b, c = self.g, self.b, self.c
+        b[Position.STONE] = Stones({Color.WHITE: 2, Color.BLACK: 1})
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 1, Color.BLACK: 1}))
+        self.assertTrue(ps.is_playable(b))
+        ps.apply(b)
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 1}))
+        self.assertTrue(ps.is_playable(b))
+        ps.apply(b)
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 1}))
+        self.assertFalse(ps.is_playable(b))
+
+    def test_pick_stones3(self):
+        g, b, c = self.g, self.b, self.c
+        b[Position.STONE] = Stones({Color.WHITE: 5})
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 2}))
+        self.assertTrue(ps.is_playable(b))
+        ps.apply(b)
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 2}))
+        self.assertFalse(ps.is_playable(b))
 
     def test_pick_card(self):
         g, b, c = self.g, self.b, self.c
-        pc = PickCard(g.current_player, Card(Color.WHITE, Stones()))
+        pc = PickCard(g.playerTurn, Card(0, Color.WHITE, Stones()))
         self.assertFalse(pc.is_playable(b))
-        pc = PickCard(g.current_player, c)
+        pc = PickCard(g.playerTurn, c)
         self.assertFalse(pc.is_playable(b))
 
+    def test_pick_card2(self):
+        g, b, c = self.g, self.b, self.c
+        p = g.current_player
+        c.need = Stones({Color.WHITE: 3})
+        p[PlayerElement.STONE] = Stones({Color.WHITE: 4, Color.GOLD: 2})
+        pc = PickCard(g.playerTurn, c)
+        self.assertTrue(pc.is_playable(b))
+        pc.apply(b)
+        self.assertDictEqual(p[PlayerElement.STONE], Stones({Color.WHITE: 1, Color.GOLD: 2}))
+
+    def test_pick_card3(self):
+        g, b, c = self.g, self.b, self.c
+        p = g.current_player
+        c.need = Stones({Color.WHITE: 3})
+        p[PlayerElement.STONE] = Stones({Color.WHITE: 1, Color.GOLD: 3})
+        pc = PickCard(g.playerTurn, c)
+        self.assertTrue(pc.is_playable(b))
+        pc.apply(b)
+        self.assertDictEqual(p[PlayerElement.STONE], Stones({Color.GOLD: 1}))
+
     def test_fold_card(self):
-        # todo
-        pass
+        g, b, c = self.g, self.b, self.c
+        fc = FoldCard(g.playerTurn, c)
+        self.assertTrue(fc.is_playable(b))
+        fc.apply(b)
+        self.assertFalse(fc.is_playable(b))
+        fc = FoldCard(g.playerTurn, b[Position.LINE1][0])
+        self.assertTrue(fc.is_playable(b))
+        fc.apply(b)
+        fc = FoldCard(g.playerTurn, b[Position.LINE1][0])
+        self.assertTrue(fc.is_playable(b))
+        fc.apply(b)
+        pc = PickCard(g.playerTurn, c)
+        self.assertFalse(pc.is_playable(b))
+        c.need = Stones({Color.WHITE: 3})
+        pc = PickCard(g.playerTurn, c)
+        self.assertTrue(pc.is_playable(b))
+        pc.apply(b)
 
 class TestGameState(unittest.TestCase):
     def setUp(self):
         self.g = Game(player_num=4, seed=0)
-        self.gs = self.g.state
+        self.gs = self.g.gameState
 
-    def test_allowed_actions(self):
+    def test_all_actions(self):
         gs = self.gs
-        ac = gs.allowedActions
-        self.assertEqual(len(ac), 30 + 15)  # PickStones(30) + FoldCard(15)
-        self.assertTrue(all([isinstance(x, PickStones) for x in ac[:30]]))
-        self.assertTrue(all([isinstance(x, FoldCard) for x in ac[30:]]))
+        ac = gs.allActions
+        self.assertEqual(len(ac), 2280)
 
     def test_end_game(self):
         b = self.g.board
-        p = self.g.player
+        p = self.g.current_player
         self.assertFalse(p.win())
         for _ in range(5):
             c = b[Position.LINE3][0]
-            p[GameElement.CARD].append(c)
+            p[PlayerElement.CARD].append(c)
             b.draw(c)
         self.assertGreater(p.score, 15)
         self.assertTrue(p.win())
-        gs = GameState(b, self.g.players, self.g.current_player)
+        gs = GameState(b, self.g.playerTurn)
         # Need to finish fairTurn
         self.assertEqual(gs.isEndGame, 0)
-        gs = GameState(b, self.g.players, 3)
+        gs = GameState(b, 3)
         self.assertEqual(gs.isEndGame, 1)
 
 if __name__ == '__main__':
