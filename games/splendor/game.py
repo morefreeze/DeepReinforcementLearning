@@ -2,6 +2,7 @@
 import random
 import itertools
 import copy
+import sys
 from enum import Enum, auto
 import numpy as np
 
@@ -341,15 +342,17 @@ class PickStones(Action):
 
     def is_playable(self, board):
         stones = self.card_or_stone
+        # Never pick gold directly
         if stones[Color.GOLD] > 0:
             return False
         colors = [c for c in stones if c != Color.GOLD and stones[c] > 0]
-        if len(colors) == 0:
-            return True
-        elif len(colors) == 1:
-            return board[Position.STONE][colors[0]] >= 4
+        for c in stones:
+            if stones[c] > board[Position.STONE][c]:
+                return False
+        if len(colors) == 1:
+            return stones[colors[0]] < 2 or board[Position.STONE][colors[0]] >= 4
         elif len(colors) <= 3:
-            return all([board[Position.STONE][c] for c in colors])
+            return True
         else:
             return False
 
@@ -374,6 +377,7 @@ class PickCard(Action):
         player = board[Position.PLAYER_POS][self.playerTurn]
         card = self.card_or_stone
         in_line = any([card in board[line] for line in [Position.LINE1, Position.LINE2, Position.LINE3]])
+        in_line = in_line or card in player[PlayerElement.FOLD]
         return in_line and card.fulfill(player[PlayerElement.STONE], player[PlayerElement.CARD])[0]
 
     def apply(self, board):
@@ -562,7 +566,9 @@ class GameState(object):
 GameState.allActions = GameState.build_all_actions()
 
 if __name__ == '__main__':
-    g = Game(player_num=2, seed=0)
+    seed = random.randrange(sys.maxsize)
+    g = Game(player_num=2, seed=seed)
+    print("Seed {0}".format(seed))
     gs = g.gameState
     b = g.board
     for i in range(100):
@@ -573,4 +579,4 @@ if __name__ == '__main__':
         if done == 1:
             print("We have a winner player id {0}".format(value))
             break
-    print(gs.board[Position.PLAYER_POS][0].score, gs.board[Position.PLAYER_POS][1].score)
+    print(gs.players[0].score, gs.players[1].score)
