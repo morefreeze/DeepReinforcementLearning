@@ -6,6 +6,7 @@ from enum import Enum, auto
 import numpy as np
 
 MAX_STONES = 10
+MAX_PLAYERS = 4
 
 class Color(Enum):
     UNKNOWN = -1
@@ -72,6 +73,13 @@ class Stones(dict):
             self[k] -= rhs[k]
         return self
 
+    def __add__(self, rhs):
+        for k in rhs:
+            if k not in self:
+                self[k] = 0
+            self[k] += rhs[k]
+        return self
+
 class Stone(object):
     color = Color.UNKNOWN
     num = 0
@@ -99,12 +107,16 @@ class Card(Stone):
             need = Stones(need)
         self.need = need
         self.score = score
+        self.num = 1
 
     def __str__(self):
         return 'id:%s %s->%s %s' % (self.id, {st: num for st, num in self.need.items() if num > 0}, self.color, self.score)
 
     def __repr__(self):
         return '%s(%s)' % (self.__class__.__name__, self)
+
+    def __eq__(self, o):
+        return self.id == o.id
 
     def fulfill(self, stones, cards) -> (bool, dict):
         '''return (is_fulfill, removed_stones)
@@ -125,7 +137,7 @@ class Card(Stone):
                 assert(v == 0)
                 continue
             if v - has_stones[k] > 0:
-                if stones[Color.GOLD] < v - has_stones[k]:
+                if stones[Color.GOLD] - removed_stones[Color.GOLD] < v - has_stones[k]:
                     return False, None
                 removed_stones[Color.GOLD] += v - has_stones[k]
         return True, removed_stones
@@ -227,12 +239,9 @@ class Player(dict):
 
     @property
     def score(self):
-        if self._score is not None:
-            return self._score
         score = 0
         for ele in (PlayerElement.CARD, PlayerElement.NOBLE):
             score += sum([c.score for c in self[ele]])
-        self._score = score
         return score
 
     def binary(self, b):
@@ -282,8 +291,9 @@ class Board(dict):
         self[Position.NOBLES] = nobles
         random.shuffle(nobles)
         # Draw player_num+1 noble cards
-        self[Position.HALL] = nobles[:player_num+1]
-        self[Position.OUT_OF_GAME] = nobles[player_num+1:]
+        max_noble = max(4, player_num+1)
+        self[Position.HALL] = nobles[:max_noble]
+        self[Position.OUT_OF_GAME] = nobles[max_noble:]
         self[Position.PLAYER_POS] = [Player() for _ in range(player_num)]
 
     def draw(self, card):
@@ -373,12 +383,13 @@ class PickCard(Action):
         if not is_fulfill:
             raise NotFulfillError
         player[PlayerElement.STONE] -= removed_stones
+        board[Position.STONE] += removed_stones
         player[PlayerElement.CARD].append(card)
         board.draw(card)
         # If fulfill noble then acquire automatically
         for noble in board[Position.HALL]:
             if noble.fulfill(player[PlayerElement.CARD]):
-                pn = PickNoble(self.playerTurn, ActionType.PICK_NOBLE, noble)
+                pn = PickNoble(self.playerTurn, noble)
                 pn.apply(b)
 
 class PickNoble(Action):
@@ -389,7 +400,7 @@ class PickNoble(Action):
     def is_playable(self, board):
         player = board[Position.PLAYER_POS][self.playerTurn]
         noble = self.card_or_stone
-        return noble in board[Positio.HALL] and noble.fulfill(player[PlayerElement.CARD])
+        return noble in board[Position.HALL] and noble.fulfill(player[PlayerElement.CARD])
 
     def apply(self, board):
         if self.is_playable(board):
@@ -423,12 +434,11 @@ class FoldCard(Action):
 
 class Game(object):
 
-    def __init__(self, player_num=2, seed=None):
+    def __init__(self, player_num=2, seed=0):
         self.name = 'splendor'
         self.player_num = player_num
         self.seed = seed
         self.reset()
-        self.pieces = {'0': 'Alice', '1': 'Bob', '2': 'Claire', '3': 'Doggy'}
         self.action_size = len(self.gameState.allActions)
         self.state_size = len(self.gameState.binary)
         self.input_shape = (player_num, 1, self.state_size // player_num)
@@ -450,6 +460,10 @@ class Game(object):
         info = None
         return ((new_state, value, done, info))
 
+    def identities(self, state, actionValues):
+        identities = [(state, actionValues)]
+        return identities
+
     @property
     def player(self):
         return self.board[Position.PLAYER_POS][self.playerTurn]
@@ -460,6 +474,7 @@ class GameState(object):
         self.board = board
         self.players = board[Position.PLAYER_POS]
         self.playerTurn = playerTurn
+        self.pieces = {'0': 'Alice', '1': 'Bob', '2': 'Claire', '3': 'Doggy'}
         self.binary = self._binary()
         self.id = self._convertStateToId()
         self.allowedActions = self._allowedActions()
@@ -487,7 +502,7 @@ class GameState(object):
     def _allowedActions(self):
         allowed_actions = []
         for idx, act in enumerate(self.allActions):
-            if act.is_playable(self.board):
+            if self.playerTurn == act.playerTurn and act.is_playable(self.board):
                 allowed_actions.append(idx)
         return allowed_actions
 
@@ -498,7 +513,7 @@ class GameState(object):
                 self.fairTurn = True
         if self.fairTurn and self.playerTurn == len(players) - 1:
             player_score = [(idx, p.score) for idx, p in enumerate(players)]
-            sorted(player_score, key=lambda x: (-x[0], x[1]))
+            player_score = sorted(player_score, key=lambda x: (-x[1], x[0]))
             return (player_score[0][0], 1)
         return (0, 0)
 
@@ -509,25 +524,25 @@ class GameState(object):
         # sum all player's score
         return tuple(p.score for p in self.board[Position.PLAYER_POS])
 
-    @property
-    def allActions(self):
-        if hasattr(self, '_all_actions'):
-            return self._all_actions
+    @staticmethod
+    def build_all_actions():
         all_actions = []
-        # PickStones
-        # Pick 1 stone from each color
-        for num in range(3, 0, -1):
-            for colors in itertools.combinations(Color.ALL.value, num):
-                all_actions.append(PickStones(self.playerTurn, Stones({Color(c): 1 for c in colors})))
-        # Pick 2 stones from one color
-        for c in Color.ALL.value:
-            all_actions.append(PickStones(self.playerTurn, Stones({Color(c): 2})))
-        # PickCard & FoldCard
-        for line in (Position.LINE1, Position.LINE2, Position.LINE3):
-            for card in self.board[line]:
-                all_actions.append(PickCard(self.playerTurn, card))
-                all_actions.append(FoldCard(self.playerTurn, card))
-        self._all_actions = all_actions
+        cards = Cards()
+        cards = sum(map(list, cards.values()), [])
+        for playerTurn in range(MAX_PLAYERS):
+            # PickStones
+            # Pick 1 stone from each color
+            for num in range(3, 0, -1):
+                for colors in itertools.combinations(Color.ALL.value, num):
+                    all_actions.append(PickStones(playerTurn, Stones({Color(c): 1 for c in colors})))
+            # Pick 2 stones from one color
+            for c in Color.ALL.value:
+                all_actions.append(PickStones(playerTurn, Stones({Color(c): 2})))
+            # PickCard & FoldCard
+            for line in (Position.LINE1, Position.LINE2, Position.LINE3):
+                for card in cards:
+                    all_actions.append(PickCard(playerTurn, card))
+                    all_actions.append(FoldCard(playerTurn, card))
         return all_actions
 
     def takeAction(self, action):
@@ -544,17 +559,18 @@ class GameState(object):
     def render(self, logger):
         logger.info('-'*20)
 
+GameState.allActions = GameState.build_all_actions()
+
 if __name__ == '__main__':
     g = Game(player_num=2, seed=0)
-    b = g.board
     gs = g.gameState
-    new_gs, value, done, info = g.step(gs.allowedActions[-1])
-    print(len(new_gs.binary))
-    print(new_gs.id)
-
-    p = g.player
-    for _ in range(5):
-        c = b[Position.LINE3][0]
-        p[PlayerElement.CARD].append(c)
-        b.draw(c)
-    print(p.score)
+    b = g.board
+    for i in range(100):
+        print("Round {0}".format(i))
+        action = random.choice(gs.allowedActions)
+        print(gs.allActions[action])
+        gs, value, done, info = g.step(action)
+        if done == 1:
+            print("We have a winner player id {0}".format(value))
+            break
+    print(gs.board[Position.PLAYER_POS][0].score, gs.board[Position.PLAYER_POS][1].score)
