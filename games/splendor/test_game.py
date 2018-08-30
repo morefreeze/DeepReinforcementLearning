@@ -73,6 +73,7 @@ class TestAction(unittest.TestCase):
         self.assertTrue(pc.is_playable(b))
         pc.apply(b)
         self.assertDictEqual(p[PlayerElement.STONE], Stones({Color.WHITE: 1, Color.GOLD: 2}))
+        self.assertEqual(len(p.binary(b)), 160)
 
     def test_pick_card3(self):
         g, b, c = self.g, self.b, self.c
@@ -83,6 +84,7 @@ class TestAction(unittest.TestCase):
         self.assertTrue(pc.is_playable(b))
         pc.apply(b)
         self.assertDictEqual(p[PlayerElement.STONE], Stones({Color.GOLD: 1}))
+        self.assertEqual(len(p.binary(b)), 160)
 
     def test_fold_card(self):
         g, b, c = self.g, self.b, self.c
@@ -102,6 +104,22 @@ class TestAction(unittest.TestCase):
         pc = PickCard(g.playerTurn, c)
         self.assertTrue(pc.is_playable(b))
         pc.apply(b)
+
+    def test_pick_noble(self):
+        g, b, c = self.g, self.b, self.c
+        p = g.current_player
+        noble = b[Position.HALL][0]
+        noble.need = Stones({Color.WHITE: 1})
+        noble.score = 3
+        c.color = Color.WHITE
+        c.need = Stones()
+        c.score = 2
+        self.assertEqual(p.score, 0)
+        pc = PickCard(g.playerTurn, c)
+        self.assertTrue(pc.is_playable(b))
+        pc.apply(b)
+        self.assertEqual(p.score, 5)
+        self.assertEqual(len(p.binary(b)), 160)
 
     def test_do_nothing(self):
         g, b, c = self.g, self.b, self.c

@@ -184,19 +184,18 @@ class Cards(dict):
                     )
                     id_ += 1
 
-class CardStone(Stone):
-    '''CardStone is a collections of cards, but it refer Stone attribute(color, num)'''
+class CardStones(Stones):
+    '''CardStones is a collections of cards, but it refer Stones dict'''
 
 class Noble(object):
     id = None
     score = 0
-    # List of CardType
-    need = Stones()
+    need = CardStones()
 
     def __init__(self, id_, need, score=3):
         self.id = id_
         if type(need) == dict:
-            need = Stones(need)
+            need = CardStones(need)
         self.need = need
         self.score = score
 
@@ -207,7 +206,7 @@ class Noble(object):
         return '%s(%s)' % (self.__class__.__name__, self)
 
     def fulfill(self, cards) -> bool:
-        has_stones = Stones()
+        has_stones = CardStones()
         for c in cards:
             has_stones[c.color] += 1
         return self.need <= has_stones
@@ -217,10 +216,10 @@ class Nobles(list):
     def __init__(self):
         id_ = 0
         for i in range(5):
-            self.append(Noble(id, dict(zip(map(Color, (Color.ALL.value*2)[i:i+3]), [3,3,3])), score=4))
+            self.append(Noble(id_, dict(zip(map(Color, (Color.ALL.value*2)[i:i+3]), [3,3,3])), score=4))
             id_ += 1
         for i in range(5):
-            self.append(Noble(id, dict(zip(map(Color, (Color.ALL.value*2)[i:i+2]), [4,4])), score=3))
+            self.append(Noble(id_, dict(zip(map(Color, (Color.ALL.value*2)[i:i+2]), [4,4])), score=3))
             id_ += 1
 
 class Player(dict):
@@ -395,7 +394,8 @@ class PickCard(Action):
         for noble in board[Position.HALL]:
             if noble.fulfill(player[PlayerElement.CARD]):
                 pn = PickNoble(self.playerTurn, noble)
-                pn.apply(b)
+                pn.apply(board)
+                break  # Only pick one noble
 
 class PickNoble(Action):
 
