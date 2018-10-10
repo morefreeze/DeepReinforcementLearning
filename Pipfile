@@ -44,6 +44,7 @@ Keras = "==2.1.5"
 Markdown = "==2.6.11"
 prompt_toolkit = "==1.0.15"
 Pygments = "==2.2.0"
+tqdm = "*"
 
 [dev-packages]
 
