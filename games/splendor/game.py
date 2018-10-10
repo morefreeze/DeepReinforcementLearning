@@ -1,4 +1,5 @@
 # coding: utf-8
+import functools
 import random
 import itertools
 import copy
@@ -49,6 +50,7 @@ class ActionType(Enum):
     FOLD_CARD = auto()
     DO_NOTHING = auto()
 
+@functools.total_ordering
 class Stones(dict):
 
     def __init__(self, other=None):
@@ -82,19 +84,20 @@ class Stones(dict):
 class Stone(object):
     color = Color.UNKNOWN
     num = 0
-    where = Position.OUT_OF_GAME
 
-    def __init__(self, color, num, where):
-        self.color, self.num, self.where = color, num, where
+    def __init__(self, color, num):
+        self.color, self.num = color, num
 
     def __str__(self):
-        return '%s %s on %s' % (self.color, self.num, self.where)
+        return '%s %s on %s' % (self.color, self.num)
 
     def __repr__(self):
         return '%s(%s)' % (self.__class__.__name__, self)
 
-class Card(Stone):
+class Card(object):
     id = None
+    color = Color.UNKNOWN
+    num = 0
     score = 0
     # List of Stone
     need = Stones()
@@ -180,7 +183,7 @@ class Cards(dict):
                     self[deck].append(
                         Card(id_, Color(Color.ALL.value[i]),
                              dict(zip(map(Color, (Color.ALL.value*2)[i:i+5]), pat)),
-                            score)
+                             score)
                     )
                     id_ += 1
 
@@ -389,7 +392,10 @@ class PickCard(Action):
         player[PlayerElement.STONE] -= removed_stones
         board[Position.STONE] += removed_stones
         player[PlayerElement.CARD].append(card)
-        board.draw(card)
+        if card in player[PlayerElement.FOLD]:
+            player[PlayerElement.FOLD].remove(card)
+        else:
+            board.draw(card)
         # If fulfill noble then acquire automatically
         for noble in board[Position.HALL]:
             if noble.fulfill(player[PlayerElement.CARD]):
@@ -495,7 +501,6 @@ class GameState(object):
         self.id = self._convertStateToId()
         self.allowedActions = self._allowedActions()
         self.fairTurn = False
-        self.deadlock = False
         self.winner, self.isEndGame = self._checkForEndGame()
         # self.value = self._getValue()
         self.score = self._getScore()
@@ -517,6 +522,7 @@ class GameState(object):
         return ','.join(map(str, positions))
 
     def _allowedActions(self):
+        self.deadlock = False
         allowed_actions = []
         do_nothing_id = None
         for idx, act in enumerate(self.allActions):
@@ -595,11 +601,12 @@ GameState.allActions = GameState.build_all_actions()
 
 if __name__ == '__main__':
     seed = random.randrange(sys.maxsize)
+    seed = 9126652113354603979
     g = Game(player_num=2, seed=seed)
     print("Seed {0}".format(seed))
     gs = g.gameState
     b = g.board
-    for i in range(100):
+    for i in range(300):
         print("Round {0}".format(i))
         action = random.choice(gs.allowedActions)
         print(gs.allActions[action])
@@ -607,4 +614,7 @@ if __name__ == '__main__':
         if done == 1:
             print("We have a winner player id {0}".format(value))
             break
+    else:
+        print("Sth must be deadlock {}".format(seed))
+        raise RuntimeError
     print(gs.players[0].score, gs.players[1].score)

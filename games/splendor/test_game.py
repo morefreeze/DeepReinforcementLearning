@@ -104,6 +104,9 @@ class TestAction(unittest.TestCase):
         pc = PickCard(g.playerTurn, c)
         self.assertTrue(pc.is_playable(b))
         pc.apply(b)
+        # Can't pick fold card twice
+        pc = PickCard(g.playerTurn, c)
+        self.assertFalse(pc.is_playable(b))
 
     def test_pick_noble(self):
         g, b, c = self.g, self.b, self.c
