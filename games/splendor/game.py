@@ -9,7 +9,9 @@ from collections import Counter
 import numpy as np
 
 MAX_STONES_LIMIT = 10
+MAX_HAND_STONES = 10
 MAX_PLAYERS = 4
+WIN_SCORE = 3
 
 class Color(Enum):
     UNKNOWN = -1
@@ -235,7 +237,7 @@ class Player(dict):
         self[PlayerElement.FOLD] = []
 
     def win(self):
-        return self.score >= 15
+        return self.score >= WIN_SCORE
 
     @property
     def score(self):
@@ -260,7 +262,7 @@ class Player(dict):
         '''
         stones_position = np.array([], dtype=np.int)
         for x in sorted(self[PlayerElement.STONE].items(), key=lambda x:x[0].value):
-            t = np.zeros(MAX_STONES_LIMIT)
+            t = np.zeros(MAX_STONES_LIMIT, dtype=np.int)
             t[x[1]] = 1
             stones_position = np.append(stones_position, t)
         return np.concatenate((cards_position, nobles_position, stones_position))
@@ -286,6 +288,7 @@ class Board(dict):
         self[Position.LINE1], self[Position.DECK1] = self[Position.DECK1][:draw_num], self[Position.DECK1][draw_num:]
         self[Position.LINE2], self[Position.DECK2] = self[Position.DECK2][:draw_num], self[Position.DECK2][draw_num:]
         self[Position.LINE3], self[Position.DECK3] = self[Position.DECK3][:draw_num], self[Position.DECK3][draw_num:]
+        self['turn'] = 0
 
         nobles = Nobles()
         self[Position.NOBLES] = nobles
@@ -295,6 +298,22 @@ class Board(dict):
         self[Position.HALL] = nobles[:max_noble]
         self[Position.OUT_OF_GAME] = nobles[max_noble:]
         self[Position.PLAYER_POS] = [Player() for _ in range(player_num)]
+
+    def binary(self):
+        cards_position = np.zeros(len(self[Position.CARDS]), dtype=np.int)
+        for pos in (Position.DECK1, Position.DECK2, Position.DECK3,
+                    Position.LINE1, Position.LINE2, Position.LINE3):
+            for c in self[pos]:
+                cards_position[c.id] = pos.value
+        nobles_position = np.zeros(len(self[Position.NOBLES]), dtype=np.int)
+        for n in self[Position.HALL]:
+            nobles_position[n.id] = 1
+        stones_position = np.array([], dtype=np.int)
+        for x in sorted(self[Position.STONE].items(), key=lambda x:x[0].value):
+            t = np.zeros(MAX_STONES_LIMIT, dtype=np.int)
+            t[x[1]] = 1
+            stones_position = np.append(stones_position, t)
+        return np.concatenate((cards_position, nobles_position, stones_position))
 
     def draw(self, card):
         '''Remove card from some line and draw new card from deck'''
@@ -312,7 +331,19 @@ class Board(dict):
             self[to].append(self[from_][0])
             self[from_] = self[from_][1:]
 
-class Action(object):
+class ActionMeta(type):
+    # is_playable will be called before subclass.is_playable
+    def __new__(cls, name, bases, attrs):
+        if name != 'Action':
+            old_is_playable = attrs['is_playable']
+            def new_is_playable(self, *args, **kwargs):
+                if not Action.is_playable(self, *args, **kwargs):
+                    return False
+                return old_is_playable(self, *args, **kwargs)
+            attrs['is_playable'] = new_is_playable
+        return type.__new__(cls, name, bases, attrs)
+
+class Action(object, metaclass=ActionMeta):
 
     def __init__(self, playerTurn, typ, card_or_stone):
         self.playerTurn = playerTurn
@@ -329,7 +360,7 @@ class Action(object):
         raise NotImplementedError
 
     def is_playable(self, board):
-        return False
+        return self.playerTurn == board['turn']
 
 class PickStonesExceedError(Exception):
     pass
@@ -354,7 +385,7 @@ class PickStones(Action):
         elif len(colors) > 3:
             return False
         tmp_stones = board[Position.PLAYER_POS][self.playerTurn][PlayerElement.STONE] + stones
-        return sum(tmp_stones.values()) <= MAX_STONES_LIMIT
+        return sum(tmp_stones.values()) <= MAX_HAND_STONES
 
     def apply(self, board):
         if not self.is_playable(board):
@@ -409,6 +440,8 @@ class PickNoble(Action):
         super().__init__(playerTurn, ActionType.PICK_NOBLE, noble)
 
     def is_playable(self, board):
+        if self.playerTurn != board['turn']:
+            return False
         player = board[Position.PLAYER_POS][self.playerTurn]
         noble = self.card_or_stone
         return noble in board[Position.HALL] and noble.fulfill(player[PlayerElement.CARD])
@@ -473,12 +506,21 @@ class Game(object):
         self.board = Board(self.player_num)
         self.players = self.board[Position.PLAYER_POS]
         self.gameState = GameState(self.board, self.playerTurn)
+        self.steps = []
         return self.gameState
 
     def step(self, action):
-        new_state, value, done = self.gameState.takeAction(action)
+        try:
+            new_state, value, done = self.gameState.takeAction(action)
+        except DeadlockGameError as e:
+            print("Seed is %d" % self.seed)
+            import pickle
+            with open('deadlock.pkl', 'wb') as f:
+                pickle.dump(self.steps, f)
+            raise e
         self.gameState = new_state
         self.playerTurn = new_state.playerTurn
+        self.steps.append(action)
         info = None
         return ((new_state, value, done, info))
 
@@ -493,6 +535,7 @@ class Game(object):
 class GameState(object):
 
     def __init__(self, board, playerTurn):
+        board['turn'] = playerTurn
         self.board = board
         self.players = board[Position.PLAYER_POS]
         self.playerTurn = playerTurn
@@ -516,10 +559,19 @@ class GameState(object):
 
 
     def _convertStateToId(self):
-        positions = np.array([], dtype=np.int)
-        for p in self.players:
-            positions = np.append(positions, p.binary(self.board))
-        return ','.join(map(str, positions))
+        id_str = ''.join([str(p) for p in self.players])
+        id_str += str(self.board)
+        return id_str
+        # positions = np.array([], dtype=np.int)
+        # for p in self.players:
+            # positions = np.append(positions, p.binary(self.board))
+        # positions = np.append(positions, self.board.binary())
+        # return ','.join(map(str, positions))
+
+    #todo: how to restore from id?
+    @classmethod
+    def _convertIdToState(self, positions):
+        pass
 
     def _allowedActions(self):
         self.deadlock = False
@@ -577,10 +629,9 @@ class GameState(object):
             for c in Color.ALL.value:
                 all_actions.append(PickStones(playerTurn, Stones({Color(c): 2})))
             # PickCard & FoldCard
-            for line in (Position.LINE1, Position.LINE2, Position.LINE3):
-                for card in cards:
-                    all_actions.append(PickCard(playerTurn, card))
-                    all_actions.append(FoldCard(playerTurn, card))
+            for card in cards:
+                all_actions.append(PickCard(playerTurn, card))
+                all_actions.append(FoldCard(playerTurn, card))
         return all_actions
 
     def takeAction(self, action):
@@ -601,7 +652,7 @@ GameState.allActions = GameState.build_all_actions()
 
 if __name__ == '__main__':
     seed = random.randrange(sys.maxsize)
-    seed = 9126652113354603979
+    seed = 0 if len(sys.argv) >= 1 else int(sys.argv[1])
     g = Game(player_num=2, seed=seed)
     print("Seed {0}".format(seed))
     gs = g.gameState

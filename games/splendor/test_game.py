@@ -133,6 +133,14 @@ class TestAction(unittest.TestCase):
         gs = GameState(b, 0)
         self.assertEqual(gs.allActions[gs.allowedActions[0]].typ, ActionType.DO_NOTHING)
 
+    def test_not_your_turn(self):
+        g, b = self.g, self.b
+        ps = PickStones(g.playerTurn, Stones({Color.WHITE: 1}))
+        self.assertTrue(ps.is_playable(b))
+        ps = PickStones(g.playerTurn+1, Stones({Color.WHITE: 1}))
+        self.assertFalse(ps.is_playable(b))
+
+
 class TestGameState(unittest.TestCase):
     def setUp(self):
         self.g = Game(player_num=4, seed=0)
@@ -141,7 +149,7 @@ class TestGameState(unittest.TestCase):
     def test_all_actions(self):
         gs = self.gs
         ac = gs.allActions
-        self.assertEqual(len(ac), 2284)
+        self.assertEqual(len(ac), 844)
 
     def test_end_game(self):
         b = self.g.board
