@@ -389,7 +389,7 @@ class PickStones(Action):
 
     def apply(self, board):
         if not self.is_playable(board):
-            raise PickStonesExceedError
+            raise NotFulfillError
         player = board[Position.PLAYER_POS][self.playerTurn]
         stones = self.card_or_stone
         for c, num in stones.items():
@@ -535,7 +535,6 @@ class Game(object):
 class GameState(object):
 
     def __init__(self, board, playerTurn):
-        board['turn'] = playerTurn
         self.board = board
         self.players = board[Position.PLAYER_POS]
         self.playerTurn = playerTurn
@@ -640,8 +639,9 @@ class GameState(object):
         done: 1 for ending game 0 for otherwise'''
         new_board = copy.deepcopy(self.board)
         self.allActions[action].apply(new_board)
-        self.playerTurn = (self.playerTurn + 1) % len(self.players)
-        new_state = GameState(new_board, self.playerTurn)
+        new_player_turn = (self.playerTurn + 1) % len(self.players)
+        new_board['turn'] = new_player_turn
+        new_state = GameState(new_board, new_player_turn)
         winner, done = (new_state.winner, 1) if new_state.isEndGame else (0, 0)
         return new_state, winner, done
 
