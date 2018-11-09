@@ -68,11 +68,13 @@ def playMatches(player1, player2, EPISODES, logger, turns_until_tau0, memory = N
 
         if player1Starts == 0:
             players = {BEST_PLAYER_ID:{"agent": player1, "name":player1.name}
-                    , PLAYER_ID1: {"agent": player2, "name":player2.name}
+                       , PLAYER_ID1: {"agent": player2, "name":player2.name}
+                       , -1: {"agent": player2, "name":player2.name}  # for connect4
                     }
         else:
             players = {BEST_PLAYER_ID:{"agent": player2, "name":player2.name}
-                    , PLAYER_ID1: {"agent": player1, "name":player1.name}
+                       , PLAYER_ID1: {"agent": player1, "name":player1.name}
+                       , -1: {"agent": player2, "name":player2.name}  # for connect4
                     }
         logger.info('--------------')
 
@@ -109,7 +111,7 @@ def playMatches(player1, player2, EPISODES, logger, turns_until_tau0, memory = N
                 if memory != None:
                     #### If the game is finished, assign the values correctly to the game moves
                     for move in memory.stmemory:
-                        if move['playerTurn'] == state.playerTurn:
+                        if True or move['playerTurn'] == state.playerTurn:
                             move['value'] = 1 if winner == state.playerTurn else -1
 
                     memory.commit_ltmemory()
