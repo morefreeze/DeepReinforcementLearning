@@ -11,7 +11,7 @@ import numpy as np
 MAX_STONES_LIMIT = 10
 MAX_HAND_STONES = 10
 MAX_PLAYERS = 4
-WIN_SCORE = 3
+WIN_SCORE = 15
 
 class Color(Enum):
     UNKNOWN = -1
@@ -510,14 +510,7 @@ class Game(object):
         return self.gameState
 
     def step(self, action):
-        try:
-            new_state, value, done = self.gameState.takeAction(action)
-        except DeadlockGameError as e:
-            print("Seed is %d" % self.seed)
-            import pickle
-            with open('deadlock.pkl', 'wb') as f:
-                pickle.dump(self.steps, f)
-            raise e
+        new_state, value, done = self.gameState.takeAction(action)
         self.gameState = new_state
         self.playerTurn = new_state.playerTurn
         self.steps.append(action)
@@ -641,7 +634,14 @@ class GameState(object):
         self.allActions[action].apply(new_board)
         new_player_turn = (self.playerTurn + 1) % len(self.players)
         new_board['turn'] = new_player_turn
-        new_state = GameState(new_board, new_player_turn)
+        try:
+            new_state = GameState(new_board, new_player_turn)
+        except DeadlockGameError as e:
+            print("Seed is %d" % self.seed)
+            import pickle
+            with open('deadlock.pkl', 'wb') as f:
+                pickle.dump([self.seed] + self.steps, f)
+            return self, -2, 1  # value=-2 means no one wins, -1 is used in connect4
         winner, done = (new_state.winner, 1) if new_state.isEndGame else (0, 0)
         return new_state, winner, done
 

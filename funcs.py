@@ -70,11 +70,13 @@ def playMatches(player1, player2, EPISODES, logger, turns_until_tau0, memory = N
             players = {BEST_PLAYER_ID:{"agent": player1, "name":player1.name}
                        , PLAYER_ID1: {"agent": player2, "name":player2.name}
                        , -1: {"agent": player2, "name":player2.name}  # for connect4
+                       , -2: {"agent": None, "name": 'drawn'}  # for splender
                     }
         else:
             players = {BEST_PLAYER_ID:{"agent": player2, "name":player2.name}
                        , PLAYER_ID1: {"agent": player1, "name":player1.name}
                        , -1: {"agent": player2, "name":player2.name}  # for connect4
+                       , -2: {"agent": None, "name": 'drawn'}  # for splender
                     }
         logger.info('--------------')
 
@@ -119,9 +121,11 @@ def playMatches(player1, player2, EPISODES, logger, turns_until_tau0, memory = N
                 logger.info('%s WINS!', players[winner]['name'])
                 scores[players[winner]['name']] += 1
                 if winner == BEST_PLAYER_ID:
-                    sp_scores['sp'] = sp_scores['sp'] + 1
+                    sp_scores['sp'] += 1
+                elif winner == -2:  # for splender
+                    sp_scores['drawn'] += 1
                 else:
-                    sp_scores['nsp'] = sp_scores['nsp'] + 1
+                    sp_scores['nsp'] += 1
 
                 pts = state.score
                 for i in range(len(pts)):
